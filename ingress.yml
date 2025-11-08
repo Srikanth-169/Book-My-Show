@@ -3,15 +3,15 @@ kind: Ingress
 metadata:
   name: bms-ingress
   annotations:
-    kubernetes.io/ingress.class: "nginx"
+    kubernetes.io/ingress.class: nginx
 spec:
-  rules:   
-    http:
-      paths:
-      - path: /srikanth
-        pathType: Prefix
-        backend:
-          service:
-            name: bms-service
-            port:
-              number: 80
+  rules:
+    - http:
+        paths:
+          - path: /movies
+            pathType: Prefix
+            backend:
+              service:
+                name: bms-service
+                port:
+                  number: 80
