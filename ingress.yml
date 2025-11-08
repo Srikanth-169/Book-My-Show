@@ -5,8 +5,7 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: "nginx"
 spec:
-  rules:
-  - host:   # replace with your domain or ALB DNS later
+  rules:   
     http:
       paths:
       - path: /srikanth
