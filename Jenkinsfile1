@@ -1,12 +1,14 @@
-(without K8S Stage)
 pipeline {
     agent any
     tools {
-        jdk 'jdk17'
+        jdk 'JDK17'
         nodejs 'node23'
     }
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
+        DOCKER_IMAGE = 'srikanth169/bms:latest'
+        EKS_CLUSTER_NAME = 'sri'
+        AWS_REGION = 'ap-south-1'
     }
     stages {
         stage('Clean Workspace') {
@@ -16,7 +18,7 @@ pipeline {
         }
         stage('Checkout from Git') {
             steps {
-                git branch: 'main', url: 'https://github.com/KastroVKiran/Book-My-Show.git'
+               checkout scmGit(branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/Srikanth-169/Book-My-Show.git']])
                 sh 'ls -la'  // Verify files after checkout
             }
         }
@@ -27,13 +29,6 @@ pipeline {
                     $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=BMS \
                     -Dsonar.projectKey=BMS 
                     '''
-                }
-            }
-        }
-        stage('Quality Gate') {
-            steps {
-                script {
-                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
                 }
             }
         }
@@ -52,12 +47,6 @@ pipeline {
                 '''
             }
         }
-        stage('OWASP FS Scan') {
-            steps {
-                dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit', odcInstallation: 'DP-Check'
-                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-            }
-        }
         stage('Trivy FS Scan') {
             steps {
                 sh 'trivy fs . > trivyfs.txt'
@@ -66,35 +55,32 @@ pipeline {
         stage('Docker Build & Push') {
             steps {
                 script {
-                    withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
+                    withDockerRegistry(credentialsId: 'dockerhub-creds', toolName: 'docker') {
                         sh ''' 
                         echo "Building Docker image..."
-                        docker build --no-cache -t kastrov/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
+                        docker build --no-cache -t srikanth169/bms:latest -f bookmyshow-app/Dockerfile bookmyshow-app
 
                         echo "Pushing Docker image to registry..."
-                        docker push kastrov/bms:latest
+                        docker push srikanth169/bms:latest
                         '''
                     }
                 }
             }
         }
-        stage('Deploy to Container') {
+        stage('Deploy to EKS Cluster') {
             steps {
-                sh ''' 
-                echo "Stopping and removing old container..."
-                docker stop bms || true
-                docker rm bms || true
+                withAWS(credentials: 'aws-cred', region: 'ap-south-1') {
+                    sh '''
+                    echo "Verifying AWS credentials..."
+                    aws sts get-caller-identity
 
-                echo "Running new container on port 3000..."
-                docker run -d --restart=always --name bms -p 3000:3000 kastrov/bms:latest
-
-                echo "Checking running containers..."
-                docker ps -a
-
-                echo "Fetching logs..."
-                sleep 5  # Give time for the app to start
-                docker logs bms
-                '''
+                    echo "Deploying to EKS..."
+                    aws eks update-kubeconfig --region ap-south-1 --name sri
+                    kubectl apply -f deployment.yml
+                    kubectl apply -f service.yml
+                    kubectl apply -f ingress.yml
+                    '''
+                }
             }
         }
     }
@@ -105,7 +91,7 @@ pipeline {
                 body: "Project: ${env.JOB_NAME}<br/>" +
                       "Build Number: ${env.BUILD_NUMBER}<br/>" +
                       "URL: ${env.BUILD_URL}<br/>",
-                to: 'kastrokiran@gmail.com',
+                to: 'askfortesaws6@gmail.com',
                 attachmentsPattern: 'trivyfs.txt,trivyimage.txt'
         }
     }
